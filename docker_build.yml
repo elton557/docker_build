@@ -1,0 +1,36 @@
+docker_build:
+  stage: docker_build
+  before_script: []                    # Campo vazio para ignorar configurações globais.
+  image: docker:stable                 # Imagem para o container que fará o deploy.
+  services:
+    - docker:stable-dind
+  script:
+    - export http_proxy=$PROXY_DOCKER  # Define o proxy para o container.
+    - export https_proxy=$PROXY_DOCKER # Define o proxy para o container.
+    - apk update
+    - apk add --no-cache ca-certificates curl git
+    - |
+      # Obtém a última mensagem de commit
+      COMMIT_MSG=$(git log -1 --pretty=%B)  
+      # Define o padrão para a versão (ex.: "Version: 1.0.0" ou "VERSION: 1.0.0")
+      VERSION_PATTERN="^version: [0-9]+\.[0-9]+\.[0-9]+"
+      # Verifica se a mensagem contém a versão no padrão esperado
+      if ! echo "$COMMIT_MSG" | grep -iEq "$VERSION_PATTERN"; then
+        echo "Error: Commit message must include a version number in the format 'Version: X.X.X'"
+        exit 1
+      fi  
+      # Extrai a versão da mensagem de commit
+      VERSION=$(echo "$COMMIT_MSG" | grep -ioE "[0-9]+\.[0-9]+\.[0-9]+")
+      # Exibe a versão para confirmar
+      echo "Version found: $VERSION"
+      # Exporta a variável para que envsubst possa acessá-la
+      export VERSION
+    - echo "Login Nexus"
+    - docker login -u $NEXUS_USERNAME_DEV -p $NEXUS_PASSWORD_DEV $NEXUS_URL_DEV  # Login no Nexus
+    - echo "Login realizado"
+    - echo "Build Docker"
+    - docker build -t $NEXUS_URL_DEV/dsis-1/${CI_PROJECT_NAME}:$VERSION .        # Faz o build da imagem
+    - echo "Fim build"
+  tags:
+    - docker
+  allow_failure: false
